@@ -1,0 +1,76 @@
+{
+  "schema": 1,
+  "core": "electric-sound",
+  "abi": "osfs-engine-voice-v1",
+  "rust": "rustc 1.99.0 (b940084d7 2026-09-28)",
+  "cargo": "cargo 1.99.0 (5f94df478 2026-08-27)",
+  "optimizer": "wasm-opt version 132",
+  "node": "26.9.0",
+  "target": "wasm32-unknown-unknown",
+  "maximumMemoryBytes": 4194304,
+  "build": {
+    "command": [
+      "cargo",
+      "+stable",
+      "build",
+      "-p",
+      "electric-sound",
+      "--release",
+      "--locked",
+      "--offline",
+      "--target",
+      "wasm32-unknown-unknown"
+    ],
+    "rustflags": "-C target-feature=+simd128 -C link-arg=-zstack-size=131072 -C link-arg=--initial-memory=2097152 -C link-arg=--max-memory=4194304",
+    "optimize": [
+      "wasm-opt",
+      "-O3",
+      "--enable-simd",
+      "--strip-debug"
+    ]
+  },
+  "inputs": {
+    "../engine-sound/src/voiceAbi.ts": "75e4545960609bf20906638e8ad95203148c26ae059f63f6dd1c0b42f65f7dda",
+    "package.json": "1dca9f3745120eabe53269f1dd06ea14a751f6f4fdd947a17aaded1ace8ff8fe",
+    "src/assets.ts": "631978c02f2b3b3d0b1368ed414f3d57d5b3aeb624ad8d42a29c8f0c6725ee85",
+    "src/profile.ts": "669a3d95ac04e8a28cf53ec38da5af6d766d8ef3ecaee30d1d628c80f3736ee5",
+    "src/reference.ts": "1e21164826ebaba0e58533a015fe06925aa1002db0de4f1730708b1dc49528a3",
+    "wasm/Cargo.lock": "39d928ed1e310665cbf09f36a39cd9583c99d076ffc15cdd8fc149ecb174de0c",
+    "wasm/Cargo.toml": "87676e9e4a7734bd2eb6d28570c0a439b1312d288a16e0ad3b2f1221a4399bf1",
+    "wasm/crates/electric-sound/Cargo.toml": "772b796f27c984f6b9e605a9f8df8c1ec0ea0ef9d7d13f48ad8e38710ea50216",
+    "wasm/crates/electric-sound/src/lib.rs": "5788b6072369c472f5e1d588aeb4bbfffda988cad135d93b15b6f437fd40790b",
+    "wasm/rust-toolchain.toml": "045aa0b806e6faad4d96d385fd3825ec1186f58a7e20eca9f71be833fad12ca4",
+    "wasm/scripts/build.mjs": "5ee0c954a7f4326c094979bbe9dd8348680e5db3b7f7820f4d81bf5540441371",
+    "wasm/scripts/check.mjs": "dc4177d4cdfa3498371ff39573ca1c1ebdf5714f3ff6af0ae3ba28495acd287c",
+    "wasm/toolchain.lock.json": "44030df48114c2bb72259e35cfbf070b39d2ebcb60981ec1189a4bbe59a86693"
+  },
+  "outputs": {
+    "wasm/single/electric-sound.wasm": {
+      "sha256": "c93fd40ed01e829e58e5981c7be40bef325d5031065671a38f469c02804981b0",
+      "bytes": 21157
+    },
+    "public/audio/electric-sound/voice.wasm": {
+      "sha256": "c93fd40ed01e829e58e5981c7be40bef325d5031065671a38f469c02804981b0",
+      "bytes": 21157
+    },
+    "public/0sfs-mod.json": {
+      "sha256": "5afc8a8b6625369704a4999abdf905ef340e93150c483696b87a30ba5ae0d1ca",
+      "bytes": 775
+    }
+  },
+  "imports": [],
+  "exports": [
+    "memory",
+    "osfs_voice_abi_version",
+    "osfs_voice_commit_profile",
+    "osfs_voice_init",
+    "osfs_voice_input_ptr",
+    "osfs_voice_output_ptr",
+    "osfs_voice_process",
+    "osfs_voice_profile_ptr",
+    "osfs_voice_profile_size",
+    "osfs_voice_reset"
+  ],
+  "performance": "unmeasured",
+  "power": "unmeasured"
+}

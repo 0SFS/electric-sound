@@ -1,0 +1,26 @@
+{
+  "name": "@0sfs/electric-sound",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Reusable electric motor and propeller sound generator for 0SFS.",
+  "license": "AGPL-3.0-only",
+  "type": "module",
+  "exports": {
+    "./profile": "./src/profile.ts",
+    "./reference": "./src/reference.ts",
+    "./assets": "./src/assets.ts",
+    "./wasm": "./public/audio/electric-sound/voice.wasm",
+    "./manifest": "./public/0sfs-mod.json",
+    "./package.json": "./package.json"
+  },
+  "dependencies": {
+    "@0sfs/engine-sound": "file:../engine-sound"
+  },
+  "scripts": {
+    "build:wasm": "node wasm/scripts/build.mjs",
+    "check:wasm": "node wasm/scripts/check.mjs",
+    "test": "node --experimental-strip-types --test wasm/tests/electric.test.ts",
+    "check:parity": "node --experimental-strip-types --test wasm/tests/electric.test.ts",
+    "references": "node scripts/render-references.mjs"
+  }
+}

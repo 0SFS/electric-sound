@@ -1,0 +1,9 @@
+{
+  "rust": "1.99.0",
+  "cargo": "1.99.0",
+  "binaryen": "132",
+  "node": "26.9.0",
+  "target": "wasm32-unknown-unknown",
+  "maximumMemoryBytes": 4194304,
+  "maximumBinaryBytes": 131072
+}
