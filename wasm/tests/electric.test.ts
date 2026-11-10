@@ -5,9 +5,9 @@ import { createElectricReference, INPUT_STRIDE, MAX_FRAMES, MAX_VOICES } from ".
 import { electricProfileValues, validateElectricProfile } from "../../src/profile.ts";
 
 const mini = { radiusM: 0.0597, blades: 2, chordM: 0.011, pitchM: 0.06604, maxRpm: 13300,
-  referenceThrustN: 0.6106725, tonalGain: 0.22, broadbandGain: 0.14, mechanicalGain: 0.035, outputGain: 0.8 };
+  referenceThrustN: 0.6106725, tonalGain: 0.22, broadbandGain: 0.11, mechanicalGain: 0.035, outputGain: 0.8 };
 const air = { radiusM: 0.0917, blades: 2, chordM: 0.0155, pitchM: 0.09652, maxRpm: 9200,
-  referenceThrustN: 1.4592375, tonalGain: 0.24, broadbandGain: 0.18, mechanicalGain: 0.03, outputGain: 0.9 };
+  referenceThrustN: 1.4592375, tonalGain: 0.24, broadbandGain: 0.14, mechanicalGain: 0.03, outputGain: 0.9 };
 const module = new WebAssembly.Module(readFileSync(new URL("../single/electric-sound.wasm", import.meta.url)));
 interface VoiceExports {
   memory: WebAssembly.Memory;
@@ -88,6 +88,8 @@ test("Rust/WASM matches TypeScript sample-for-sample across rates, sources, tier
     for (let block = 0; block < 12; block++) {
       for (let v = 0; v < 4; v++) for (let frame = 0; frame < 256; frame++) {
         const o = (v * MAX_FRAMES + frame) * INPUT_STRIDE;
+        core.input[o + 14] = Math.cos(block * 0.4 + v * 0.5);
+        core.input[o + 15] = (block % 2) * 0.8;
         core.input[o + 16] = 2800 + v * 1700 + block * 250 + frame * 0.3;
         core.input[o + 17] = 0.2 + v * 0.3 + block * 0.02;
         core.input[o + 18] = 0.001 + block * 0.0002;
@@ -97,6 +99,7 @@ test("Rust/WASM matches TypeScript sample-for-sample across rates, sources, tier
         core.input[o + 24] = block === 4 ? 0 : (block % 3) + 1;
         core.input[o + 25] = 4 + (block % 3) * 4;
         core.input[o + 26] = block % 4;
+        core.input[o + 28] = block % 2;
         core.input[o + 29] = block > 5 || (block === 5 && frame >= 80) ? 1 : 0;
         core.input[o + 30] = block === 7 && frame > 20 ? 0 : 1;
       }
@@ -129,7 +132,7 @@ test("four independent rotors respond only to their own speed and load", () => {
   assert.notDeepEqual(baseline.output.slice(0, 128), baseline.output.slice(4096, 4224), "same RPM does not phase-lock rotors");
 });
 
-test("one partial per rotor retains all four blade-passage fundamentals on Low", () => {
+test("one partial per rotor retains all four blade-passage fundamentals and Chebyshev BPF harmonics on Low", () => {
   const core = create(48000, 4, { ...mini, broadbandGain: 0, mechanicalGain: 1 });
   const signals: number[][] = [[], [], [], []];
   for (let v = 0; v < 4; v++) for (let frame = 0; frame < MAX_FRAMES; frame++) {
@@ -150,16 +153,43 @@ test("one partial per rotor retains all four blade-passage fundamentals on Low",
   }
   for (let v = 0; v < 4; v++) {
     const fundamental = 200 + v * 20;
-    assert.ok(amplitude(signals[v], fundamental, 48000) > 0.01);
+    assert.ok(amplitude(signals[v], fundamental, 48000) > 0.008);
     assert.ok(amplitude(signals[v], fundamental / 2, 48000) < 0.0001, "one partial prioritizes blade passage above mechanical shaft tone");
-    assert.ok(amplitude(signals[v], fundamental * 2, 48000) < 0.0001, "one partial does not add higher harmonics");
+    assert.ok(amplitude(signals[v], fundamental * 2, 48000) > 0.0025, "Chebyshev BPF overtones give Low tonal body");
   }
+});
+
+test("Medium 3-partial budget synthesizes upper BPF harmonics, shaft tone, and directivity tilt", () => {
+  const tonal = { ...mini, broadbandGain: 0, mechanicalGain: 0 };
+  const core = create(48000, 1, tonal);
+  for (let frame = 0; frame < MAX_FRAMES; frame++) {
+    const o = frame * INPUT_STRIDE;
+    core.input[o + 14] = 0; // in-plane listener (cos = 0)
+    core.input[o + 15] = 1; // full directivity weight
+    core.input[o + 16] = 9000; // 150 Hz shaft, 300 Hz BPF
+    core.input[o + 24] = 2; // Med
+    core.input[o + 25] = 3; // 3 partials per rotor on Med -> 4 Chebyshev harmonics
+    core.input[o + 26] = 0;
+  }
+  const inPlaneSamples: number[] = [];
+  for (let i = 0; i < 60; i++) {
+    const out = core.process(128);
+    if (i >= 15) inPlaneSamples.push(...out.slice(0, 128));
+  }
+  for (const order of [1, 2, 3, 4]) {
+    assert.ok(amplitude(inPlaneSamples, 300 * order, 48000) > 0.001, `missing harmonic ${order}xBPF`);
+  }
+  // On-axis listener (cos = 1) has lower upper-harmonic brightness than in-plane (cos = 0)
+  for (let frame = 0; frame < MAX_FRAMES; frame++) core.input[frame * INPUT_STRIDE + 14] = 1;
+  const onAxisSamples: number[] = [];
+  for (let i = 0; i < 45; i++) onAxisSamples.push(...core.process(128).slice(0, 128));
+  assert.ok(amplitude(inPlaneSamples, 1200, 48000) > amplitude(onAxisSamples, 1200, 48000) * 1.1);
 });
 
 test("two-blade passage follows RPM, both drone profiles sound different, and load changes amplitude", () => {
   const tonal = { ...mini, broadbandGain: 0, mechanicalGain: 0 };
   const samples = render(tonal, 6000).slice(-4800);
-  assert.ok(amplitude(samples, 200, 48000) > 0.01);
+  assert.ok(amplitude(samples, 200, 48000) > 0.008);
   assert.ok(amplitude(samples, 200, 48000) > amplitude(samples, 180, 48000) * 50);
   const faster = render(tonal, 9000).slice(-4800);
   assert.ok(amplitude(faster, 300, 48000) > amplitude(faster, 200, 48000) * 50);

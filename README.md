@@ -5,11 +5,18 @@ module implements `osfs-engine-voice-v1`, with a TypeScript reference beside it.
 The owning engine mod supplies propeller geometry, speed range and acoustic
 calibration. There are no aircraft identities or recordings in this generator.
 
-Four independently phased rotor voices follow live RPM and load. Blade-passage
-harmonics, shaft-order mechanical tone and broadband propeller noise use simulated
-thrust, torque, inflow, air density and VRS. Pole counts and ESC switching tones
-are intentionally absent because those electrical states are not simulated.
-Gains and spectra are original approximations, not measured acoustic calibration.
+Four independently phased rotor voices follow live RPM, load and listener
+directivity. Blade-passage harmonics use a Chebyshev trigonometric recurrence
+(`s_next = 2 * c1 * s_curr - s_prev`, synthesizing 3 harmonics per rotor on Low,
+4 on Medium and 5 on High from two polynomial evaluations per sample) with
+Schroeder-style phase dispersion (`[1.0, 0.30, -0.12, 0.06, -0.032]`) to keep
+waveform crest factor and sample-to-sample slope low. Medium and High add the
+$1\times$ shaft mechanical tone, and all tiers shape broadband trailing-edge/vortex
+air rush through a tip-speed bandpass modulated at the blade-passage frequency
+(`1 + blade_mod_depth * blade_sin + vrs_mod_depth * mod_sin`). Slow-moving
+envelope, square-root, filter-coefficient and harmonic-weight calculations run at
+an 8-sample control stride (`CONTROL_STRIDE = 8`). Gains and spectra are original
+approximations, not measured acoustic calibration.
 
 ## ABI
 

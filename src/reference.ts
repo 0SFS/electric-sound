@@ -1,5 +1,5 @@
+import { VOICE_INPUT_FIELDS, VOICE_MAX_FRAMES, VOICE_MAX_SOURCES } from "../../engine-sound/src/voiceAbi.ts";
 import { electricProfileValues } from "./profile.ts";
-import { VOICE_MAX_SOURCES, VOICE_MAX_FRAMES, VOICE_INPUT_FIELDS } from "@0sfs/engine-sound/voiceAbi";
 
 export const MAX_VOICES = VOICE_MAX_SOURCES;
 export const MAX_FRAMES = VOICE_MAX_FRAMES;
@@ -7,6 +7,10 @@ export const INPUT_STRIDE = VOICE_INPUT_FIELDS.length;
 const TAU = 6.283185307179586;
 const HALF_PI = 1.5707963267948966;
 const UINT = 4294967296;
+const CONTROL_STRIDE = 8;
+
+const HARMONIC_WEIGHTS = [0, 1, 0.30, -0.12, 0.06, -0.032] as const;
+
 const clamp = (value: number, low: number, high: number): number => Math.min(high, Math.max(low, value));
 const finite = (value: number, fallback = 0): number => Number.isFinite(value) ? value : fallback;
 
@@ -35,6 +39,19 @@ interface Voice {
   high: number;
   wash: number;
   counter: number;
+  controlCountdown: number;
+  lastPartials: number;
+  activeHarmonics: number;
+  anti1: number;
+  hWeight: Float64Array;
+  tonalScale: number;
+  shaftScale: number;
+  highAlpha: number;
+  lowAlpha: number;
+  broadbandScale: number;
+  bladeModDepth: number;
+  vrsModDepth: number;
+  wakeScale: number;
 }
 
 /** Numeric reference. The production host runs the Rust twin in its AudioWorklet. */
@@ -44,9 +61,35 @@ export function createElectricReference(sampleRate: number, voiceCount: number, 
   const output = new Float64Array(MAX_VOICES * 2 * MAX_FRAMES);
   const voices: Voice[] = Array.from({ length: voiceCount }, (_, index) => {
     const ownSeed = (seed ^ Math.imul(index + 1, 0x9e3779b9)) >>> 0;
-    return { profile: [], rng: ownSeed || 1, seed: ownSeed || 1, phase: ownSeed / UINT,
-      modulation: ownSeed / UINT, smooth: new Float64Array(6), targets: new Float64Array(6), gate: 0,
-      density: 1.225, low: 0, high: 0, wash: 0, counter: 0 };
+    const validSeed = ownSeed || 1;
+    return {
+      profile: [],
+      rng: validSeed,
+      seed: validSeed,
+      phase: validSeed / UINT,
+      modulation: validSeed / UINT,
+      smooth: new Float64Array(6),
+      targets: new Float64Array(6),
+      gate: 0,
+      density: 1.225,
+      low: 0,
+      high: 0,
+      wash: 0,
+      counter: 0,
+      controlCountdown: 0,
+      lastPartials: -1,
+      activeHarmonics: 0,
+      anti1: 0,
+      hWeight: new Float64Array(6),
+      tonalScale: 0,
+      shaftScale: 0,
+      highAlpha: 0,
+      lowAlpha: 0,
+      broadbandScale: 0,
+      bladeModDepth: 0,
+      vrsModDepth: 0,
+      wakeScale: 0,
+    };
   });
   function resetVoice(voice: Voice) {
     voice.rng = voice.seed;
@@ -58,6 +101,19 @@ export function createElectricReference(sampleRate: number, voiceCount: number, 
     voice.density = 1.225;
     voice.low = voice.high = voice.wash = 0;
     voice.counter = 0;
+    voice.controlCountdown = 0;
+    voice.lastPartials = -1;
+    voice.activeHarmonics = 0;
+    voice.anti1 = 0;
+    voice.hWeight.fill(0);
+    voice.tonalScale = 0;
+    voice.shaftScale = 0;
+    voice.highAlpha = 0;
+    voice.lowAlpha = 0;
+    voice.broadbandScale = 0;
+    voice.bladeModDepth = 0;
+    voice.vrsModDepth = 0;
+    voice.wakeScale = 0;
   }
   function random(voice: Voice): number {
     let x = voice.rng;
@@ -66,6 +122,10 @@ export function createElectricReference(sampleRate: number, voiceCount: number, 
     return voice.rng / 2147483648 - 1;
   }
   const alpha = 1 / (1 + sampleRate * 0.01);
+  const gateStep = 1 / (sampleRate * 0.01);
+  const invRate = 1 / sampleRate;
+  const nyquistLimit = sampleRate * 0.48;
+  const invFadeBw = 1 / (sampleRate * 0.08);
   return {
     output,
     configure(index: number, profile: unknown) {
@@ -81,6 +141,11 @@ export function createElectricReference(sampleRate: number, voiceCount: number, 
         const voice = voices[v];
         if (!voice.profile.length) throw new Error("Electric voice has no profile");
         const [radius, blades, chord, pitch, maxRpm, referenceThrust, tonalGain, broadbandGain, mechanicalGain, outputGain] = voice.profile;
+        const invMaxRpm = 1 / maxRpm;
+        const invRefThrust = 1 / referenceThrust;
+        const invRefTorque = 1 / (referenceThrust * radius * 0.08);
+        const pitchSlope = pitch / (TAU * radius) * 0.15;
+        const geometry = Math.sqrt(clamp(chord * radius / 0.001, 0.05, 30));
         for (let frame = 0; frame < frames; frame++) {
           const offset = (v * MAX_FRAMES + frame) * INPUT_STRIDE;
           const sourceOutput = v * 2 * MAX_FRAMES + frame;
@@ -90,7 +155,7 @@ export function createElectricReference(sampleRate: number, voiceCount: number, 
           if (counter !== voice.counter) { resetVoice(voice); voice.counter = counter; }
           if (!(input[offset + 24] > 0)) continue;
           const valid = input[offset + 30] > 0.5;
-          voice.gate = clamp(voice.gate + (valid ? 1 : -1) / (sampleRate * 0.01), 0, 1);
+          voice.gate = clamp(voice.gate + (valid ? gateStep : -gateStep), 0, 1);
           if (valid) {
             voice.targets[0] = clamp(finite(input[offset + 16]), 0, maxRpm * 2);
             voice.targets[1] = clamp(finite(input[offset + 17]), 0, referenceThrust * 8);
@@ -106,49 +171,112 @@ export function createElectricReference(sampleRate: number, voiceCount: number, 
           if (targets[0] === 0 && voice.smooth[0] < 0.1) voice.smooth[0] = 0;
           const [rpm, thrust, torque, induced, vrs, axial] = voice.smooth;
           const rotationHz = rpm / 60;
-          voice.phase += rotationHz / sampleRate;
+          voice.phase += rotationHz * invRate;
           voice.phase -= Math.floor(voice.phase);
-          voice.modulation += rotationHz * 0.09 / sampleRate;
+          voice.modulation += rotationHz * 0.09 * invRate;
           voice.modulation -= Math.floor(voice.modulation);
-          if (rpm === 0) continue;
-          const speed = rpm / maxRpm;
-          const tip = TAU * radius * rotationHz;
-          const tipScale = clamp(tip / 80, 0, 3);
-          const load = clamp(thrust / referenceThrust, 0, 4);
-          const torqueLoad = clamp(torque / (referenceThrust * radius * 0.08), 0, 4);
-          const density = voice.density / 1.225;
-          const cull = clamp(finite(input[offset + 13], 1), 0.5, 2);
+          if (rpm === 0) {
+            voice.controlCountdown = 0;
+            continue;
+          }
           const partials = Math.floor(clamp(finite(input[offset + 25]), 0, 12));
           const noiseBands = Math.floor(clamp(finite(input[offset + 26]), 0, 8));
-          const harmonics = partials === 1 ? 1 : Math.max(0, partials - 1);
-          let tone = 0;
-          for (let harmonic = 1; harmonic <= harmonics; harmonic++) {
-            const frequency = rotationHz * blades * harmonic;
-            const antiAlias = clamp((sampleRate * 0.48 - frequency * cull) / (sampleRate * 0.08), 0, 1);
-            tone += sine(voice.phase * blades * harmonic) * antiAlias
-              * (1 + pitch / (TAU * radius) * 0.15 * (harmonic - 1)) / (harmonic * harmonic);
-          }
-          const tonalEnvelope = speed * speed * (0.2 + 0.8 * Math.sqrt(load)) * (0.5 + 0.5 * tipScale);
-          let result = tone * tonalGain * tonalEnvelope;
-          if (partials > 1) {
-            const antiAlias = clamp((sampleRate * 0.48 - rotationHz * cull) / (sampleRate * 0.08), 0, 1);
-            result += sine(voice.phase) * mechanicalGain * speed * (0.2 + 0.8 * Math.sqrt(torqueLoad)) * antiAlias;
-          }
-          if (noiseBands > 0) {
-            const noise = random(voice);
-            const highCut = clamp(700 + tip * 35 + (induced + axial) * 45, 20, sampleRate * 0.4);
+          const bladePhase = voice.phase * blades;
+          const bladeSin = sine(bladePhase);
+
+          if (voice.controlCountdown === 0 || partials !== voice.lastPartials) {
+            voice.controlCountdown = CONTROL_STRIDE;
+            voice.lastPartials = partials;
+            const speed = rpm * invMaxRpm;
+            const tip = TAU * radius * rotationHz;
+            const tipScale = clamp(tip / 80, 0, 3);
+            const load = clamp(thrust * invRefThrust, 0, 4);
+            const loadSqrt = Math.sqrt(load);
+            const torqueLoad = clamp(torque * invRefTorque, 0, 4);
+            const density = voice.density / 1.225;
+            const cull = clamp(finite(input[offset + 13], 1), 0.5, 2);
+            const cosine = clamp(finite(input[offset + 14], 0), -1, 1);
+            const dirWeight = clamp(finite(input[offset + 15], 0), 0, 1);
+            const inPlane = 1 - Math.abs(cosine);
+            const highFidelity = input[offset + 28] > 0.5;
+            let harmonics = 0;
+            if (partials === 1) {
+              harmonics = 3;
+            } else if (partials > 1) {
+              harmonics = highFidelity ? 5 : 4;
+            }
+            const bpfHz = rotationHz * blades;
+            if (harmonics > 0 && bpfHz * cull < nyquistLimit) {
+              voice.anti1 = clamp((nyquistLimit - bpfHz * cull) * invFadeBw, 0, 1);
+              const directivityBright = 1 + dirWeight * (0.25 * inPlane - 0.08);
+              let maxH = 1;
+              for (let harmonic = 2; harmonic <= harmonics; harmonic++) {
+                const frequency = bpfHz * harmonic;
+                if (frequency * cull >= nyquistLimit) break;
+                maxH = harmonic;
+                const antiAlias = clamp((nyquistLimit - frequency * cull) * invFadeBw, 0, 1);
+                voice.hWeight[harmonic] = (1 + pitchSlope * (harmonic - 1))
+                  * directivityBright
+                  * HARMONIC_WEIGHTS[harmonic]
+                  * antiAlias;
+              }
+              voice.activeHarmonics = maxH;
+            } else {
+              voice.activeHarmonics = 0;
+              voice.anti1 = 0;
+            }
+            const tonalEnvelope = speed * speed * (0.2 + 0.8 * loadSqrt) * (0.5 + 0.5 * tipScale);
+            voice.tonalScale = tonalGain * tonalEnvelope;
+            if (partials > 1) {
+              const shaftAnti = clamp((nyquistLimit - rotationHz * cull) * invFadeBw, 0, 1);
+              voice.shaftScale = mechanicalGain * speed * (0.2 + 0.8 * Math.sqrt(torqueLoad)) * shaftAnti;
+            } else {
+              voice.shaftScale = 0;
+            }
+            const highCut = clamp(650 + tip * 32 + (induced + axial) * 42, 20, sampleRate * 0.38);
             const lowCut = clamp(150 + tip * 3, 20, highCut * 0.6);
             const highOmega = TAU * highCut;
             const lowOmega = TAU * lowCut;
-            voice.high += highOmega / (sampleRate + highOmega) * (noise - voice.high);
-            voice.low += lowOmega / (sampleRate + lowOmega) * (noise - voice.low);
-            const geometry = Math.sqrt(clamp(chord * radius / 0.001, 0.05, 30));
+            voice.highAlpha = highOmega / (sampleRate + highOmega);
+            voice.lowAlpha = lowOmega / (sampleRate + lowOmega);
             const broadbandEnvelope = tipScale * tipScale * (0.25 + 0.75 * load) * geometry * density;
-            const modulation = 1 + vrs * 0.2 * sine(voice.modulation);
-            result += (voice.high - voice.low) * broadbandGain * broadbandEnvelope * (1 + vrs * 0.8) * modulation;
+            const lowTierTrim = partials === 1 ? 0.82 : 1;
+            voice.broadbandScale = broadbandGain * broadbandEnvelope * (1 + vrs * 0.8) * lowTierTrim;
+            voice.bladeModDepth = 0.22 + 0.1 * loadSqrt;
+            voice.vrsModDepth = vrs * 0.2;
+            voice.wakeScale = broadbandGain * speed * load * (0.2 + vrs * 0.6);
+          }
+          voice.controlCountdown -= 1;
+
+          let tone = 0;
+          if (voice.activeHarmonics > 0) {
+            tone = bladeSin * voice.anti1;
+            if (voice.activeHarmonics > 1) {
+              const c1 = sine(bladePhase + 0.25);
+              const twoC1 = 2 * c1;
+              let sPrev = 0;
+              let sCurr = bladeSin;
+              for (let harmonic = 2; harmonic <= voice.activeHarmonics; harmonic++) {
+                const sNext = twoC1 * sCurr - sPrev;
+                sPrev = sCurr;
+                sCurr = sNext;
+                tone += sNext * voice.hWeight[harmonic];
+              }
+            }
+          }
+          let result = tone * voice.tonalScale;
+          if (partials > 1) {
+            result += sine(voice.phase) * voice.shaftScale;
+          }
+          if (noiseBands > 0) {
+            const noise = random(voice);
+            voice.high += voice.highAlpha * (noise - voice.high);
+            voice.low += voice.lowAlpha * (noise - voice.low);
+            const modulation = 1 + voice.bladeModDepth * bladeSin + voice.vrsModDepth * sine(voice.modulation);
+            result += (voice.high - voice.low) * voice.broadbandScale * modulation;
             if (noiseBands > 1) {
               voice.wash += 0.02 * (random(voice) - voice.wash);
-              result += voice.wash * broadbandGain * speed * load * (0.2 + vrs * 0.6);
+              result += voice.wash * voice.wakeScale;
             }
           }
           output[sourceOutput] = finite(result * outputGain * voice.gate);
