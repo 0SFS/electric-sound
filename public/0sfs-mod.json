@@ -25,7 +25,7 @@
     ],
     "wasm": {
       "path": "audio/electric-sound/voice.wasm",
-      "sha256": "842e63a62693d6099ba1fe1b4ec8cb5abcb6f7d1ac39f5bc4f0f532d92f0d527"
+      "sha256": "2893e31cb578a8fde2f2306fa0529adf9f3942420543f1550ff4978c8e357c75"
     }
   }
 }

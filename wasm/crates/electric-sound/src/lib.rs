@@ -240,9 +240,14 @@ pub extern "C" fn osfs_voice_commit_profile(voice: i32) -> u32 {
         if !valid_profile(&SETUP[index]) {
             return 0;
         }
+        let was_configured = STATE[index].configured;
         STATE[index].profile = SETUP[index];
         STATE[index].configured = true;
-        STATE[index].reset();
+        if !was_configured {
+            STATE[index].reset();
+        } else {
+            STATE[index].control_countdown = 0;
+        }
     }
     1
 }

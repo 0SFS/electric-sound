@@ -27,6 +27,7 @@ function sine(phase: number): number {
 
 interface Voice {
   profile: number[];
+  configured: boolean;
   rng: number;
   seed: number;
   phase: number;
@@ -64,6 +65,7 @@ export function createElectricReference(sampleRate: number, voiceCount: number, 
     const validSeed = ownSeed || 1;
     return {
       profile: [],
+      configured: false,
       rng: validSeed,
       seed: validSeed,
       phase: validSeed / UINT,
@@ -130,8 +132,14 @@ export function createElectricReference(sampleRate: number, voiceCount: number, 
     output,
     configure(index: number, profile: unknown) {
       if (!voices[index]) throw new Error("Invalid electric voice index");
+      const wasConfigured = voices[index].configured;
       voices[index].profile = electricProfileValues(profile);
-      resetVoice(voices[index]);
+      voices[index].configured = true;
+      if (!wasConfigured) {
+        resetVoice(voices[index]);
+      } else {
+        voices[index].controlCountdown = 0;
+      }
     },
     reset() { for (const voice of voices) resetVoice(voice); output.fill(0); },
     process(input: Float64Array, frames: number): Float64Array {

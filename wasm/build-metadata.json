@@ -34,11 +34,11 @@
     "package.json": "1dca9f3745120eabe53269f1dd06ea14a751f6f4fdd947a17aaded1ace8ff8fe",
     "src/assets.ts": "631978c02f2b3b3d0b1368ed414f3d57d5b3aeb624ad8d42a29c8f0c6725ee85",
     "src/profile.ts": "669a3d95ac04e8a28cf53ec38da5af6d766d8ef3ecaee30d1d628c80f3736ee5",
-    "src/reference.ts": "c485764758d0143a9add0f5e3861a5f4c1083b93163d08a017d11a44059183b0",
+    "src/reference.ts": "49a06ae865ef0fc5ada971d3b2c25012e62640ddee97a44cb41acece56513db5",
     "wasm/Cargo.lock": "39d928ed1e310665cbf09f36a39cd9583c99d076ffc15cdd8fc149ecb174de0c",
     "wasm/Cargo.toml": "87676e9e4a7734bd2eb6d28570c0a439b1312d288a16e0ad3b2f1221a4399bf1",
     "wasm/crates/electric-sound/Cargo.toml": "772b796f27c984f6b9e605a9f8df8c1ec0ea0ef9d7d13f48ad8e38710ea50216",
-    "wasm/crates/electric-sound/src/lib.rs": "388a4078114bba29274a0089bcbba7a3e48722b78eabba1464094bec85d8de0f",
+    "wasm/crates/electric-sound/src/lib.rs": "2053d2628ad4db1333ec709fea6064da11f23bdd20b5095ef293064d4c1b2fb0",
     "wasm/rust-toolchain.toml": "045aa0b806e6faad4d96d385fd3825ec1186f58a7e20eca9f71be833fad12ca4",
     "wasm/scripts/build.mjs": "5ee0c954a7f4326c094979bbe9dd8348680e5db3b7f7820f4d81bf5540441371",
     "wasm/scripts/check.mjs": "dc4177d4cdfa3498371ff39573ca1c1ebdf5714f3ff6af0ae3ba28495acd287c",
@@ -46,15 +46,15 @@
   },
   "outputs": {
     "wasm/single/electric-sound.wasm": {
-      "sha256": "842e63a62693d6099ba1fe1b4ec8cb5abcb6f7d1ac39f5bc4f0f532d92f0d527",
-      "bytes": 23014
+      "sha256": "2893e31cb578a8fde2f2306fa0529adf9f3942420543f1550ff4978c8e357c75",
+      "bytes": 23041
     },
     "public/audio/electric-sound/voice.wasm": {
-      "sha256": "842e63a62693d6099ba1fe1b4ec8cb5abcb6f7d1ac39f5bc4f0f532d92f0d527",
-      "bytes": 23014
+      "sha256": "2893e31cb578a8fde2f2306fa0529adf9f3942420543f1550ff4978c8e357c75",
+      "bytes": 23041
     },
     "public/0sfs-mod.json": {
-      "sha256": "d68f2bcbda890ff5c61f062687b2f16a7f34467cc58aacbe93410efa5f6d733c",
+      "sha256": "ee0ef42d6ef6e9e44fb93bc588b8b889fed98645b37f28090beec37aa350c6ec",
       "bytes": 775
     }
   },

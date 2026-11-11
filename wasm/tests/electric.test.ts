@@ -197,6 +197,22 @@ test("two-blade passage follows RPM, both drone profiles sound different, and lo
   assert.ok(rms(render(mini, 6000, 48000, 0.9).slice(-4800)) > rms(render(mini, 6000, 48000, 0.1).slice(-4800)) * 1.5);
 });
 
+test("live profile re-commit updates gains seamlessly without resetting phase or gate", () => {
+  const core = create(48000, 1, mini);
+  for (let i = 0; i < 20; i++) {
+    core.reference.process(core.input, 128);
+    core.process(128);
+  }
+  const doubled = { ...mini, outputGain: mini.outputGain * 2 };
+  new Float64Array(core.exports.memory.buffer, core.exports.osfs_voice_profile_ptr(0), 10).set(electricProfileValues(doubled));
+  assert.equal(core.exports.osfs_voice_commit_profile(0), 1);
+  core.reference.configure(0, doubled);
+  const ref = core.reference.process(core.input, 128).slice(0, 128);
+  const act = core.process(128).slice(0, 128);
+  assert.deepEqual(act, ref);
+  assert.ok(Math.abs(act[0]) > 0.01, "first sample after live profile commit retains active gate and phase");
+});
+
 test("stopped rotors are silent, shutdown settles, and reset controls are sample accurate", () => {
   assert.equal(rms(render(mini, 0)), 0);
   const core = create();
